@@ -283,36 +283,38 @@ with tab_choice1:
     if st.button("EXECUTE IMAGE 404 SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Processing image locally in secure terminal...")
+            add_log("[*] Generating direct browser upload execution...")
 
             try:
                 uploaded_file.seek(0)
-                image_bytes = uploaded_file.read()
-                encoded_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                file_bytes = uploaded_file.getvalue()
                 
-                # 完全完結・オフライン対応の超高速ダイレクト連携ルート
-                add_log("[+] Local buffer & search vectors initialized successfully.")
+                # 外部サーバーを介さず、ボタンをクリックした瞬間にGoogle Lensの画像検索フォームへバイナリを直接POSTするHTMLフォームを生成
+                # これによりユーザーはワンクリックでツール内からGoogleの検索結果へ直結します
+                b64_data = base64.b64encode(file_bytes).decode('utf-8')
+                data_uri = f"data:{uploaded_file.type};base64,{b64_data}"
 
-                # Google Lens / TinEye へワンクリックでシームレスにジャンプするための専用リンク・HTMLインターフェース
+                add_log("[+] Direct execution payload prepared.")
+
                 st.markdown(
                     f"""
                     <div class="results-terminal">
-                    <h4>⚡ 404 CHECKER // DIRECT IMAGE SEARCH TERMINAL</h4>
-                    <p>アップロードされた画像は正常にシステムバッファにロードされました。下のボタンから直接各検索エンジンへダイレクト連携できます。</p>
+                    <h4>⚡ 404 CHECKER // AUTOMATED EXECUTION READY</h4>
+                    <p>画像をアップロードしました。以下のボタンを押すだけで、このツールから直接Google Lensの画像解析結果を新しいタブで開くことができます。</p>
                     <br>
-                    <p><b>1. Google Lens 公式検索ページへ直結:</b><br>
-                       <a href="https://lens.google.com/" target="_blank" class="cyber-link">👉 Google Lens 画面を開く（画像をドラッグ＆ドロップ）</a>
-                    </p>
-                    <p><b>2. TinEye 画像一致検索へ直結:</b><br>
-                       <a href="https://tineye.com/" target="_blank" class="cyber-link">👉 TinEye 画面を開く（画像をアップロード）</a>
-                    </p>
-                    <br>
-                    <p style="color: #94a3b8; font-size: 12px;">※サーバー側の外部通信制限（サンドボックス環境）をバイパスするため、プレビュー画像を右クリックして「画像のアドレスをコピー」または「名前をつけて画像を保存」して上記からそのままシームレスにご活用いただけます。</p>
+                    <div style="text-align: center;">
+                        <form action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
+                            <input type="hidden" name="encoded_image" value="{b64_data}">
+                            <button type="submit" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; border: 1px solid #38bdf8; padding: 15px 30px; font-weight: bold; border-radius: 4px; cursor: pointer; font-family: 'Courier New', Courier, monospace; box-shadow: 0 0 15px rgba(2, 132, 199, 0.5);">
+                                🚀 GOOGLE LENS 検索を実行する
+                            </button>
+                        </form>
+                    </div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-                add_log("[+] Scan complete. Terminal ready.")
+                add_log("[+] Direct execution component active.")
 
             except Exception as e:
                 add_log(f"[-] ERROR: {e}")
@@ -343,6 +345,7 @@ with tab_choice2:
                         "searchType": "image",
                         "lr": "lang_ja",
                     }
+                    import requests
                     try:
                         res = requests.get(url, params=params, timeout=10)
                         if res.status_code == 200:
