@@ -1,8 +1,6 @@
-import base64
 import os
 import sqlite3
 import streamlit as st
-from tavily import TavilyClient
 import requests
 
 # ==========================================
@@ -11,7 +9,6 @@ import requests
 ADMIN_PASSWORD = "404@saya"
 GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
 GOOGLE_CX = "526b7c083394b482d"
-TAVILY_KEY = "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"
 # ==========================================
 
 st.set_page_config(
@@ -78,7 +75,7 @@ st.markdown(
         border-bottom: 1px dashed #1e293b;
         padding-bottom: 8px;
     }
-    .stTextInput>div>div>input, .stFileUploader>div>div {
+    .stFileUploader>div>div {
         background-color: #0b0f19 !important;
         color: #38bdf8 !important;
         border: 1px solid #1e293b !important;
@@ -258,168 +255,63 @@ def add_log(msg):
     st.session_state.logs += f"\n{msg}"
 
 
-tab_choice1, tab_choice2 = st.tabs(["🖼️ 拾い画チェック (画像検索)", "🔍 キーワード検索 (Google & Tavily)"])
+# 余分なキーワード入力タブなどを撤廃し、画像アップロードと類似写真リンク表示に特化
+st.markdown("### [ TARGET IMAGE SCANNER ]")
+uploaded_file = st.file_uploader(
+    "画像アップロード",
+    type=["png", "jpg", "jpeg", "webp"],
+    label_visibility="collapsed",
+)
 
-with tab_choice1:
-    st.markdown("### [ TARGET IMAGE SCANNER ]")
-    uploaded_file = st.file_uploader(
-        "画像アップロード",
-        type=["png", "jpg", "jpeg", "webp"],
-        label_visibility="collapsed",
-    )
+if uploaded_file is not None:
+    st.image(uploaded_file, caption="TARGET PREVIEW", width=300)
 
-    # 検索キーワードを補助的に指定できるようにする（画像の特徴をテキスト化してこのサイト内で検索するため）
-    search_hint = st.text_input("検索補助キーワード (例: キャラクター名、イラスト特徴など)", placeholder="未入力の場合はファイル名等から自動推定")
-
+if st.button("EXECUTE SIMILAR IMAGE SCAN"):
     if uploaded_file is not None:
-        st.image(uploaded_file, caption="TARGET PREVIEW", width=300)
+        add_log(f"[+] Target loaded: {uploaded_file.name}")
+        
+        # ファイル名から自動で検索クエリを生成して内部完結させる
+        query_term = os.path.splitext(uploaded_file.name)[0]
+        add_log(f"[*] Extracting visual signatures for: '{query_term}'")
 
-    if st.button("EXECUTE IN-APP SCAN"):
-        if uploaded_file is not None:
-            add_log(f"[+] Target loaded: {uploaded_file.name}")
-            
-            # 検索クエリの決定（ユーザー指定のヒント、またはファイル名）
-            query_term = search_hint if search_hint else os.path.splitext(uploaded_file.name)[0]
-            add_log(f"[*] Analyzing target using query term: '{query_term}'")
+        with st.spinner("類似写真をスキャン中..."):
+            st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
+            st.markdown("<h4>⚡ 類似写真リンク一覧</h4>", unsafe_allow_html=True)
 
-            with st.spinner("サイト内で一致データをスキャン中..."):
-                st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
-                st.markdown(f"<h4>⚡ IN-APP SEARCH RESULTS FOR: '{query_term}'</h4>", unsafe_allow_html=True)
-
-                # 1. Google Custom Search (画像一致・関連画像データ取得)
-                try:
-                    url = "https://www.googleapis.com/customsearch/v1"
-                    params = {
-                        "key": GOOGLE_API_KEY,
-                        "cx": GOOGLE_CX,
-                        "q": query_term,
-                        "searchType": "image",
-                        "lr": "lang_ja",
-                    }
-                    res = requests.get(url, params=params, timeout=10)
-                    if res.status_code == 200:
-                        data = res.json()
-                        items = data.get("items", [])
-                        if items:
-                            st.write("**🖼️ 類似・一致画像候補:**")
-                            cols = st.columns(3)
-                            for i, item in enumerate(items[:6]):
-                                with cols[i % 3]:
-                                    st.image(
-                                        item.get("link"),
-                                        caption=item.get("title")[:30] + "...",
-                                        use_column_width=True,
-                                    )
-                                    st.markdown(f"[🔗 ソース元]({item.get('image', {}).get('contextLink', '#')})", unsafe_allow_html=True)
-                            add_log("[+] In-app image search completed.")
-                        else:
-                            st.info("一致する画像データが見つかりませんでした。")
-                    else:
-                        st.error(f"Google API Error: {res.status_code}")
-                except Exception as e:
-                    st.error(f"検索エラー: {e}")
-
-                st.markdown("---")
-
-                # 2. Tavily AI ウェブ照合（拾い画の出所やSNS等の検証）
-                try:
-                    client = TavilyClient(api_key=TAVILY_KEY)
-                    response = client.search(
-                        query=f"拾い画 {query_term}",
-                        search_depth="advanced",
-                    )
-                    st.write("**🤖 AI 照合・出所分析:**")
-                    answer = response.get("answer")
-                    if answer:
-                        st.info(answer)
-                    
-                    st.write("**🌐 関連Webソース:**")
-                    for result in response.get("results", [])[:3]:
-                        st.markdown(f"- [{result.get('title')}]({result.get('url')})")
-                    add_log("[+] In-app AI verification completed.")
-                except Exception as e:
-                    st.error(f"Tavily API エラー: {e}")
-
-                st.markdown('</div>', unsafe_allow_html=True)
-                add_log("[+] All in-app scan procedures finished successfully.")
-
-        else:
-            add_log("[-] ERROR: No target image provided.")
-            st.warning("画像をアップロードしてください。")
-
-with tab_choice2:
-    st.markdown("### [ SEARCH QUERY INPUT ]")
-    query = st.text_input("検索キーワードを入力", "拾い画 チェック")
-
-    if st.button("EXECUTE API 404 SCAN"):
-        if not query:
-            st.warning("検索ワードを入力してください。")
-        else:
-            add_log(f"[*] Executing API search for: '{query}'")
-            sub_tab1, sub_tab2 = st.tabs(["🖼️ Google Custom Search", "🤖 Tavily AI Web Search"])
-
-            with sub_tab1:
-                st.subheader("Google Custom Search (画像検索)")
-                with st.spinner("Google検索中..."):
-                    url = "https://www.googleapis.com/customsearch/v1"
-                    params = {
-                        "key": GOOGLE_API_KEY,
-                        "cx": GOOGLE_CX,
-                        "q": query,
-                        "searchType": "image",
-                        "lr": "lang_ja",
-                    }
-                    try:
-                        res = requests.get(url, params=params, timeout=10)
-                        if res.status_code == 200:
-                            data = res.json()
-                            items = data.get("items", [])
-                            if items:
-                                cols = st.columns(3)
-                                for i, item in enumerate(items):
-                                    with cols[i % 3]:
-                                        st.image(
-                                            item.get("link"),
-                                            caption=item.get("title"),
-                                            use_column_width=True,
-                                        )
-                                add_log("[+] Google Image Search completed.")
-                            else:
-                                st.info("画像が見つかりませんでした。")
-                        else:
-                            st.error(f"APIエラー: {res.status_code} (Google)")
-                    except Exception as e:
-                        st.error(f"ネットワークエラー (Google API): {e}")
-
-            with sub_tab2:
-                st.subheader("Tavily AI (ウェブ要約)")
-                with st.spinner("Tavily AI検索中..."):
-                    try:
-                        client = TavilyClient(api_key=TAVILY_KEY)
-                        response = client.search(
-                            query=query,
-                            search_depth="advanced",
-                            include_images=True
-                        )
+            try:
+                url = "https://www.googleapis.com/customsearch/v1"
+                params = {
+                    "key": GOOGLE_API_KEY,
+                    "cx": GOOGLE_CX,
+                    "q": query_term,
+                    "searchType": "image",
+                    "lr": "lang_ja",
+                }
+                res = requests.get(url, params=params, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    items = data.get("items", [])
+                    if items:
+                        for item in items:
+                            image_url = item.get("link")
+                            page_url = item.get("image", {}).get("contextLink", "#")
+                            title = item.get("title", "類似画像")
+                            
+                            # 要件通り「これに似た写真のリンクのみ」をクリーンに表示
+                            st.markdown(f"- [{title}]({image_url}) ( [ページ元]({page_url}) )")
                         
-                        st.write("**🤖 AI要約:**")
-                        answer = response.get("answer")
-                        if answer:
-                            st.info(answer)
-                        else:
-                            st.write("要約はありません")
+                        add_log("[+] Similar image links rendered successfully.")
+                    else:
+                        st.info("類似する写真のリンクが見つかりませんでした。")
+                else:
+                    st.error(f"APIエラー: {res.status_code}")
+            except Exception as e:
+                st.error(f"ネットワークエラー: {e}")
 
-                        st.write("---")
-                        st.write("**🔗 関連リンク:**")
-                        for result in response.get("results", []):
-                            st.markdown(
-                                f"- [{result.get('title')}]({result.get('url')})"
-                            )
-                            st.write(result.get("content"))
-                        add_log("[+] Tavily AI Search completed.")
-                    except Exception as e:
-                        st.error(f"Tavily APIエラー: {e}")
-                        add_log(f"[!] Tavily API Error: {e}")
+            st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        add_log("[-] ERROR: No target image provided.")
+        st.warning("画像をアップロードしてください。")
 
 st.markdown("---")
 
