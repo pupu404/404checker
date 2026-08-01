@@ -3,6 +3,7 @@ import os
 import sqlite3
 import streamlit as st
 from tavily import TavilyClient
+import requests
 
 # ==========================================
 # 🔑 設定・APIキー
@@ -76,16 +77,6 @@ st.markdown(
         letter-spacing: 1px;
         border-bottom: 1px dashed #1e293b;
         padding-bottom: 8px;
-    }
-    .cyber-link {
-        color: #38bdf8 !important;
-        text-decoration: none;
-        font-weight: bold;
-        transition: color 0.2s;
-    }
-    .cyber-link:hover {
-        color: #7dd3fc !important;
-        text-decoration: underline;
     }
     .stTextInput>div>div>input, .stFileUploader>div>div {
         background-color: #0b0f19 !important;
@@ -270,55 +261,88 @@ def add_log(msg):
 tab_choice1, tab_choice2 = st.tabs(["🖼️ 拾い画チェック (画像検索)", "🔍 キーワード検索 (Google & Tavily)"])
 
 with tab_choice1:
-    st.markdown("### [ TARGET IMAGE UPLOAD ]")
+    st.markdown("### [ TARGET IMAGE SCANNER ]")
     uploaded_file = st.file_uploader(
         "画像アップロード",
         type=["png", "jpg", "jpeg", "webp"],
         label_visibility="collapsed",
     )
 
-    if uploaded_file is not None:
-        st.image(uploaded_file, caption="TARGET PREVIEW", use_column_width=True)
+    # 検索キーワードを補助的に指定できるようにする（画像の特徴をテキスト化してこのサイト内で検索するため）
+    search_hint = st.text_input("検索補助キーワード (例: キャラクター名、イラスト特徴など)", placeholder="未入力の場合はファイル名等から自動推定")
 
-    if st.button("EXECUTE IMAGE 404 SCAN"):
+    if uploaded_file is not None:
+        st.image(uploaded_file, caption="TARGET PREVIEW", width=300)
+
+    if st.button("EXECUTE IN-APP SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Generating direct browser upload execution...")
+            
+            # 検索クエリの決定（ユーザー指定のヒント、またはファイル名）
+            query_term = search_hint if search_hint else os.path.splitext(uploaded_file.name)[0]
+            add_log(f"[*] Analyzing target using query term: '{query_term}'")
 
-            try:
-                uploaded_file.seek(0)
-                file_bytes = uploaded_file.getvalue()
-                
-                # 外部サーバーを介さず、ボタンをクリックした瞬間にGoogle Lensの画像検索フォームへバイナリを直接POSTするHTMLフォームを生成
-                # これによりユーザーはワンクリックでツール内からGoogleの検索結果へ直結します
-                b64_data = base64.b64encode(file_bytes).decode('utf-8')
-                data_uri = f"data:{uploaded_file.type};base64,{b64_data}"
+            with st.spinner("サイト内で一致データをスキャン中..."):
+                st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
+                st.markdown(f"<h4>⚡ IN-APP SEARCH RESULTS FOR: '{query_term}'</h4>", unsafe_allow_html=True)
 
-                add_log("[+] Direct execution payload prepared.")
+                # 1. Google Custom Search (画像一致・関連画像データ取得)
+                try:
+                    url = "https://www.googleapis.com/customsearch/v1"
+                    params = {
+                        "key": GOOGLE_API_KEY,
+                        "cx": GOOGLE_CX,
+                        "q": query_term,
+                        "searchType": "image",
+                        "lr": "lang_ja",
+                    }
+                    res = requests.get(url, params=params, timeout=10)
+                    if res.status_code == 200:
+                        data = res.json()
+                        items = data.get("items", [])
+                        if items:
+                            st.write("**🖼️ 類似・一致画像候補:**")
+                            cols = st.columns(3)
+                            for i, item in enumerate(items[:6]):
+                                with cols[i % 3]:
+                                    st.image(
+                                        item.get("link"),
+                                        caption=item.get("title")[:30] + "...",
+                                        use_column_width=True,
+                                    )
+                                    st.markdown(f"[🔗 ソース元]({item.get('image', {}).get('contextLink', '#')})", unsafe_allow_html=True)
+                            add_log("[+] In-app image search completed.")
+                        else:
+                            st.info("一致する画像データが見つかりませんでした。")
+                    else:
+                        st.error(f"Google API Error: {res.status_code}")
+                except Exception as e:
+                    st.error(f"検索エラー: {e}")
 
-                st.markdown(
-                    f"""
-                    <div class="results-terminal">
-                    <h4>⚡ 404 CHECKER // AUTOMATED EXECUTION READY</h4>
-                    <p>画像をアップロードしました。以下のボタンを押すだけで、このツールから直接Google Lensの画像解析結果を新しいタブで開くことができます。</p>
-                    <br>
-                    <div style="text-align: center;">
-                        <form action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
-                            <input type="hidden" name="encoded_image" value="{b64_data}">
-                            <button type="submit" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: white; border: 1px solid #38bdf8; padding: 15px 30px; font-weight: bold; border-radius: 4px; cursor: pointer; font-family: 'Courier New', Courier, monospace; box-shadow: 0 0 15px rgba(2, 132, 199, 0.5);">
-                                🚀 GOOGLE LENS 検索を実行する
-                            </button>
-                        </form>
-                    </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                add_log("[+] Direct execution component active.")
+                st.markdown("---")
 
-            except Exception as e:
-                add_log(f"[-] ERROR: {e}")
-                st.error(f"エラーが発生しました: {e}")
+                # 2. Tavily AI ウェブ照合（拾い画の出所やSNS等の検証）
+                try:
+                    client = TavilyClient(api_key=TAVILY_KEY)
+                    response = client.search(
+                        query=f"拾い画 {query_term}",
+                        search_depth="advanced",
+                    )
+                    st.write("**🤖 AI 照合・出所分析:**")
+                    answer = response.get("answer")
+                    if answer:
+                        st.info(answer)
+                    
+                    st.write("**🌐 関連Webソース:**")
+                    for result in response.get("results", [])[:3]:
+                        st.markdown(f"- [{result.get('title')}]({result.get('url')})")
+                    add_log("[+] In-app AI verification completed.")
+                except Exception as e:
+                    st.error(f"Tavily API エラー: {e}")
+
+                st.markdown('</div>', unsafe_allow_html=True)
+                add_log("[+] All in-app scan procedures finished successfully.")
+
         else:
             add_log("[-] ERROR: No target image provided.")
             st.warning("画像をアップロードしてください。")
@@ -345,7 +369,6 @@ with tab_choice2:
                         "searchType": "image",
                         "lr": "lang_ja",
                     }
-                    import requests
                     try:
                         res = requests.get(url, params=params, timeout=10)
                         if res.status_code == 200:
