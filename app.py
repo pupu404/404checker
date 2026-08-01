@@ -4,22 +4,23 @@ import streamlit as st
 import requests
 
 # ==========================================
-# 🔑 設定・APIキー
+# 🔑 設定・APIキー (完成版)
 # ==========================================
 ADMIN_PASSWORD = "404@saya"
-GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
+GOOGLE_API_KEY = "AIzaSyBLwxZBesL4VhBMac6toIPDCZxqN1vbDPY"
 GOOGLE_CX = "526b7c083394b482d"
 TAVILY_KEY = "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"
 IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"
 # ==========================================
 
 st.set_page_config(
-    page_title="404 CHECKER // IMAGE SEARCH", page_icon="⚡", layout="centered"
+    page_title="404 CHECKER // IMAGE SEARCH",
+    page_icon="⚡",
+    layout="centered"
 )
 
 # --- サイバー・ダークテーマのカスタムCSS ---
-st.markdown(
-    """
+st.markdown("""
     <style>
     .stApp {
         background-color: #030712;
@@ -75,10 +76,7 @@ st.markdown(
         border: 1px solid #1e293b !important;
     }
     </style>
-""",
-    unsafe_allow_html=True,
-)
-
+""", unsafe_allow_html=True)
 
 # --- 簡易DB（認証用） ---
 def init_db():
@@ -90,26 +88,19 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute(
-        "INSERT OR IGNORE INTO keys (license_key) VALUES (?)", ("404-TEST-KEY",)
-    )
+    cursor.execute("INSERT OR IGNORE INTO keys (license_key) VALUES (?)", ("404-TEST-KEY",))
     conn.commit()
     conn.close()
 
-
 init_db()
-
 
 def verify_key(key):
     conn = sqlite3.connect("licenses.db")
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT license_key FROM keys WHERE license_key = ?", (key,)
-    )
+    cursor.execute("SELECT license_key FROM keys WHERE license_key = ?", (key,))
     result = cursor.fetchone()
     conn.close()
     return result is not None
-
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -117,15 +108,8 @@ if "authenticated" not in st.session_state:
 
 # --- 認証画面 ---
 if not st.session_state.authenticated:
-    st.markdown(
-        '<div class="cyber-title">404 CHECKER // ACCESS CONTROL</div>',
-        unsafe_allow_html=True,
-    )
-    input_key = st.text_input(
-        "ライセンスキー",
-        type="password",
-        placeholder="404-XXXX-XXXX または アドミンパスワード",
-    )
+    st.markdown('<div class="cyber-title">404 CHECKER // ACCESS CONTROL</div>', unsafe_allow_html=True)
+    input_key = st.text_input("ライセンスキー", type="password", placeholder="404-XXXX-XXXX または アドミンパスワード")
     if st.button("AUTHENTICATE"):
         entered_val = input_key.strip()
         if entered_val == ADMIN_PASSWORD or verify_key(entered_val):
@@ -136,30 +120,22 @@ if not st.session_state.authenticated:
             st.error("ACCESS DENIED")
     st.stop()
 
-
 # --- メイン画面：画像検索専用ツール ---
-st.markdown(
-    '<div class="cyber-title">404 CHECKER // IN-APP IMAGE SEARCH</div>',
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="cyber-title">404 CHECKER // IN-APP IMAGE SEARCH</div>', unsafe_allow_html=True)
 st.sidebar.markdown(f"ACTIVE KEY: `{st.session_state.current_key}`")
 if st.sidebar.button("LOGOUT"):
     st.session_state.authenticated = False
     st.rerun()
 
 st.markdown("### [ 1. ターゲット画像のアップロード ]")
-uploaded_file = st.file_uploader(
-    "画像をアップロード",
-    type=["png", "jpg", "jpeg", "webp"],
-    label_visibility="collapsed",
-)
+uploaded_file = st.file_uploader("画像をアップロード", type=["png", "jpg", "jpeg", "webp"], label_visibility="collapsed")
 
 if uploaded_file is not None:
     st.image(uploaded_file, caption="UPLOADED TARGET", width=300)
-
+    
     if st.button("この画像に似た写真をサイト内で検索する"):
         query_term = os.path.splitext(uploaded_file.name)[0]
-
+        
         with st.spinner("データベースおよびGoogleインデックスから類似写真をスキャン中..."):
             url = "https://www.googleapis.com/customsearch/v1"
             params = {
@@ -167,18 +143,18 @@ if uploaded_file is not None:
                 "cx": GOOGLE_CX,
                 "q": query_term,
                 "searchType": "image",
-                "lr": "lang_ja",
+                "lr": "lang_ja"
             }
-
+            
             try:
                 res = requests.get(url, params=params, timeout=10)
                 if res.status_code == 200:
                     data = res.json()
                     items = data.get("items", [])
-
+                    
                     st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
                     st.markdown("<h4>⚡ 類似写真・一致リンク結果</h4>", unsafe_allow_html=True)
-
+                    
                     if items:
                         cols = st.columns(3)
                         for i, item in enumerate(items[:6]):
@@ -186,20 +162,15 @@ if uploaded_file is not None:
                                 img_link = item.get("link")
                                 page_link = item.get("image", {}).get("contextLink", "#")
                                 title = item.get("title", "類似画像")
-
+                                
                                 st.image(img_link, use_column_width=True)
-                                st.markdown(
-                                    f"**[{title[:20]}...]**({page_link})",
-                                    unsafe_allow_html=True,
-                                )
+                                st.markdown(f"**[{title[:20]}...]**({page_link})", unsafe_allow_html=True)
                     else:
                         st.info("一致する類似写真のデータが見つかりませんでした。")
-
-                    st.markdown("</div>", unsafe_allow_html=True)
+                        
+                    st.markdown('</div>', unsafe_allow_html=True)
                 else:
-                    st.error(
-                        f"APIエラー ({res.status_code}): APIキーやCXの設定を確認してください。"
-                    )
+                    st.error(f"APIエラー ({res.status_code}): APIキーやCXの設定を確認してください。")
             except Exception as e:
                 st.error(f"通信エラーが発生しました: {e}")
 else:
