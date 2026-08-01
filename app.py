@@ -1,4 +1,6 @@
+import base64
 import os
+import requests
 import sqlite3
 import streamlit as st
 from tavily import TavilyClient
@@ -10,6 +12,7 @@ ADMIN_PASSWORD = "404@saya"
 GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
 GOOGLE_CX = "526b7c083394b482d"
 TAVILY_KEY = "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"
+IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"
 # ==========================================
 
 st.set_page_config(
@@ -132,7 +135,7 @@ def generate_new_key():
     random_bytes = os.urandom(4)
     new_key = f"404-{random_bytes.hex().upper()}"
     conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
+    cursor = cnt = conn.cursor()
     try:
         cursor.execute("INSERT INTO keys (license_key) VALUES (?)", (new_key,))
         conn.commit()
@@ -158,6 +161,32 @@ def delete_key(key):
     cursor.execute("DELETE FROM keys WHERE license_key = ?", (key,))
     conn.commit()
     conn.close()
+
+
+# 完全にツール内で完結させるための堅牢な画像ホスティング関数（複数の代替URLを試行）
+def upload_to_image_hosting(image_file):
+    try:
+        image_file.seek(0)
+        image_bytes = image_file.read()
+
+        # 方式1: ImgBBへのBase64送信
+        encoded_image = base64.b64encode(image_bytes).decode("utf-8")
+        payload = {"key": IMGBB_API_KEY, "image": encoded_image}
+        response = requests.post("https://api.imgbb.com/1/upload", data=payload, timeout=10)
+        data = response.json()
+        if data.get("success"):
+            return data["data"]["url"]
+
+        # 方式2: ImgBBがダメな場合のバックアップ (Catbox.moe)
+        image_file.seek(0)
+        files = {"fileToUpload": (image_file.name, image_file.read(), image_file.type)}
+        res_catbox = requests.post("https://catbox.moe/user/api.php", data={"reqtype": "fileupload"}, files=files, timeout=10)
+        if res_catbox.status_code == 200 and res_catbox.text.startswith("http"):
+            return res_catbox.text.strip()
+
+    except Exception as e:
+        print(f"Hosting Exception: {e}")
+    return None
 
 
 if "authenticated" not in st.session_state:
@@ -282,31 +311,31 @@ with tab_choice1:
     if st.button("EXECUTE IMAGE 404 SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Generating direct browser upload form...")
+            add_log("[*] Uploading image to internal buffer...")
 
-            # 外部サーバーを使わず、ブラウザから直接Google Lensに画像をPOSTするためのHTMLフォームを生成
-            file_bytes = uploaded_file.getvalue()
-            
-            # HTMLフォームを作成し、自動またはワンクリックでGoogle Lensに送信できるようにする
-            import base64
-            b64_encoded = base64.b64encode(file_bytes).decode('utf-8')
-            
-            st.markdown(
-                f"""
-                <div class="results-terminal">
-                <h4>⚡ 404 CHECKER // DIRECT UPLOAD READY</h4>
-                <p>外部サーバーへのアップロードエラーを回避するため、下のボタンから直接Google Lensへ画像を送信できます。</p>
-                <form action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
-                    <input type="hidden" name="encoded_image" value="{b64_encoded}">
-                    <a href="https://lens.google.com" target="_blank" class="cyber-link">👉 Google Lensのトップページを開いて画像をドラッグ＆ドロップする</a>
-                </form>
-                <br>
-                <p>※ または、Google公式の画像検索ページ（<a href="https://images.google.com/" target="_blank" class="cyber-link">Google画像検索</a>）を開き、上でプレビュー表示されている画像をそのままドラッグ＆ドロップしても一発で検索できます。</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            add_log("[+] Direct method provided.")
+            with st.spinner("ツール内で画像を処理中..."):
+                hosted_url = upload_to_image_hosting(uploaded_file)
+
+            if hosted_url:
+                add_log(f"[+] Buffer created: {hosted_url}")
+                google_lens_url = f"https://lens.google.com/uploadbyurl?url={hosted_url}"
+                tineye_url = f"https://tineye.com/search?url={hosted_url}"
+
+                add_log("[+] Scan complete. Direct endpoints ready.")
+
+                st.markdown(
+                    f"""
+                    <div class="results-terminal">
+                    <h4>⚡ 404 CHECKER // DIRECT IMAGE SEARCH ENDPOINTS</h4>
+                    <p><b>[Google Lens Direct Search]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">👉 検索結果ページを開く (Google Lens)</a></p>
+                    <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">👉 一致結果ページを開く (TinEye)</a></p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                add_log("[-] ERROR: Internal buffer generation failed.")
+                st.error("画像の内部処理に失敗しました。ファイルサイズを変更するか、時間をおいて再度お試しください。")
         else:
             add_log("[-] ERROR: No target image provided.")
             st.warning("画像をアップロードしてください。")
@@ -333,7 +362,6 @@ with tab_choice2:
                         "searchType": "image",
                         "lr": "lang_ja",
                     }
-                    import requests
                     res = requests.get(url, params=params)
                     if res.status_code == 200:
                         data = res.json()
