@@ -1,5 +1,4 @@
 import os
-import requests
 import sqlite3
 import streamlit as st
 from tavily import TavilyClient
@@ -161,20 +160,6 @@ def delete_key(key):
     conn.close()
 
 
-# Catbox (APIキー不要の無料画像ストレージ) を使った高安定ホスティング関数
-def upload_to_image_hosting(image_file):
-    try:
-        image_file.seek(0)
-        files = {"fileToUpload": (image_file.name, image_file.read(), image_file.type)}
-        data = {"reqtype": "fileupload"}
-        response = requests.post("https://catbox.moe/user/api.php", data=data, files=files)
-        if response.status_code == 200 and response.text.startswith("http"):
-            return response.text.strip()
-    except Exception as e:
-        print(f"Upload Exception: {e}")
-    return None
-
-
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.current_key = None
@@ -297,30 +282,31 @@ with tab_choice1:
     if st.button("EXECUTE IMAGE 404 SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Uploading image to secure buffer...")
+            add_log("[*] Generating direct browser upload form...")
 
-            hosted_url = upload_to_image_hosting(uploaded_file)
-
-            if hosted_url:
-                add_log(f"[+] Buffer created: {hosted_url}")
-                google_lens_url = f"https://lens.google.com/uploadbyurl?url={hosted_url}"
-                tineye_url = f"https://tineye.com/search?url={hosted_url}"
-
-                add_log("[+] Scan complete. Direct endpoints ready.")
-
-                st.markdown(
-                    f"""
-                    <div class="results-terminal">
-                    <h4>⚡ 404 CHECKER // DIRECT IMAGE SEARCH ENDPOINTS</h4>
-                    <p><b>[Google Lens Direct Search]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">👉 検索結果ページを開く (Google Lens)</a></p>
-                    <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">👉 一致結果ページを開く (TinEye)</a></p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                add_log("[-] ERROR: Image hosting failed.")
-                st.error("画像のアップロードに失敗しました。ファイル形式を変えるか、時間をおいて再度お試しください。")
+            # 外部サーバーを使わず、ブラウザから直接Google Lensに画像をPOSTするためのHTMLフォームを生成
+            file_bytes = uploaded_file.getvalue()
+            
+            # HTMLフォームを作成し、自動またはワンクリックでGoogle Lensに送信できるようにする
+            import base64
+            b64_encoded = base64.b64encode(file_bytes).decode('utf-8')
+            
+            st.markdown(
+                f"""
+                <div class="results-terminal">
+                <h4>⚡ 404 CHECKER // DIRECT UPLOAD READY</h4>
+                <p>外部サーバーへのアップロードエラーを回避するため、下のボタンから直接Google Lensへ画像を送信できます。</p>
+                <form action="https://lens.google.com/upload" method="POST" enctype="multipart/form-data" target="_blank">
+                    <input type="hidden" name="encoded_image" value="{b64_encoded}">
+                    <a href="https://lens.google.com" target="_blank" class="cyber-link">👉 Google Lensのトップページを開いて画像をドラッグ＆ドロップする</a>
+                </form>
+                <br>
+                <p>※ または、Google公式の画像検索ページ（<a href="https://images.google.com/" target="_blank" class="cyber-link">Google画像検索</a>）を開き、上でプレビュー表示されている画像をそのままドラッグ＆ドロップしても一発で検索できます。</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            add_log("[+] Direct method provided.")
         else:
             add_log("[-] ERROR: No target image provided.")
             st.warning("画像をアップロードしてください。")
@@ -347,6 +333,7 @@ with tab_choice2:
                         "searchType": "image",
                         "lr": "lang_ja",
                     }
+                    import requests
                     res = requests.get(url, params=params)
                     if res.status_code == 200:
                         data = res.json()
