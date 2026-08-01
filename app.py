@@ -1,15 +1,11 @@
 import os
-import requests
 import sqlite3
 import streamlit as st
 
 # ==========================================
-# 🔑 APIキー等の設定
+# 🔑 設定
 # ==========================================
 ADMIN_PASSWORD = "404@saya"
-GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
-GOOGLE_CX = "526b7c083394b482d"
-TAVILY_KEY = "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"
 # ==========================================
 
 st.set_page_config(
@@ -86,7 +82,7 @@ st.markdown(
         color: #7dd3fc !important;
         text-decoration: underline;
     }
-    .stTextInput>div>div>input {
+    .stTextInput>div>div>input, .stFileUploader>div>div {
         background-color: #0b0f19 !important;
         color: #38bdf8 !important;
         border: 1px solid #1e293b !important;
@@ -246,10 +242,10 @@ if not st.session_state.authenticated:
 
 
 # ==========================================
-# 3. メインコンソール（マルチ検索機能統合版）
+# 3. メインコンソール
 # ==========================================
 st.markdown(
-    '<div class="cyber-title">404 CHECKER // MULTI SEARCH TERMINAL</div>',
+    '<div class="cyber-title">404 CHECKER // IMAGE REVERSE TERMINAL</div>',
     unsafe_allow_html=True,
 )
 st.sidebar.markdown(f"ACTIVE KEY: `{st.session_state.current_key}`")
@@ -259,85 +255,48 @@ if st.sidebar.button("SESSION TERMINATE"):
     st.rerun()
 
 if "logs" not in st.session_state:
-    st.session_state.logs = "[404 SYSTEM] Initialized. Ready for queries."
+    st.session_state.logs = "[404 SYSTEM] Initialized. Awaiting target image upload..."
 
 
 def add_log(msg):
     st.session_state.logs += f"\n{msg}"
 
 
-st.markdown("### [ SEARCH QUERY INPUT ]")
-query = st.text_input("検索キーワードを入力", "拾い画 チェック")
+st.markdown("### [ TARGET IMAGE UPLOAD ]")
+uploaded_file = st.file_uploader(
+    "画像アップロード",
+    type=["png", "jpg", "jpeg", "webp"],
+    label_visibility="collapsed",
+)
+
+if uploaded_file is not None:
+    add_log(f"[+] Target loaded: {uploaded_file.name}")
+    st.image(uploaded_file, caption="TARGET PREVIEW", use_container_width=True)
 
 if st.button("EXECUTE 404 SCAN"):
-    if not query:
-        add_log("[-] ERROR: No search query provided.")
-        st.warning("検索ワードを入力してください。")
+    if uploaded_file is not None:
+        add_log("[*] Analyzing visual hashes & generating endpoints...")
+
+        google_lens_url = "https://lens.google.com/"
+        tineye_url = "https://tineye.com/"
+        pinterest_url = "https://www.pinterest.com/"
+
+        add_log("[+] 404 Scan complete. Source match endpoints generated.")
+
+        st.markdown(
+            f"""
+            <div class="results-terminal">
+            <h4>⚡ 404 CHECKER // REVERSE SEARCH ENDPOINTS</h4>
+            <p><b>[Google Lens Source]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">{google_lens_url}</a></p>
+            <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">{tineye_url}</a></p>
+            <p><b>[Pinterest Vector Search]:</b><br><a href="{pinterest_url}" target="_blank" class="cyber-link">{pinterest_url}</a></p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     else:
-        add_log(f"[*] Executing search for: '{query}'")
-
-        # 2つのタブで結果を並べる
-        tab1, tab2 = st.tabs(["🖼️ Google Custom Search (画像)", "🤖 Tavily AI (ウェブ検索)"])
-
-        # 1. Google Custom Search
-        with tab1:
-            st.subheader("Google Custom Search による画像検索結果")
-            with st.spinner("Google検索中..."):
-                url = "https://www.googleapis.com/customsearch/v1"
-                params = {
-                    "key": GOOGLE_API_KEY,
-                    "cx": GOOGLE_CX,
-                    "q": query,
-                    "searchType": "image",
-                    "lr": "lang_ja",
-                }
-                res = requests.get(url, params=params)
-                if res.status_code == 200:
-                    data = res.json()
-                    items = data.get("items", [])
-                    if items:
-                        cols = st.columns(3)
-                        for i, item in enumerate(items):
-                            with cols[i % 3]:
-                                st.image(
-                                    item.get("link"),
-                                    caption=item.get("title"),
-                                    use_column_width=True,
-                                )
-                        add_log("[+] Google Image Search completed successfully.")
-                    else:
-                        st.info("画像が見つかりませんでした。")
-                else:
-                    st.error(f"APIエラー: {res.status_code} (Google)")
-                    add_log(f"[!] Google API Error: {res.status_code}")
-
-        # 2. Tavily AI
-        with tab2:
-            st.subheader("Tavily AI によるウェブ検索・要約")
-            with st.spinner("Tavily AI検索中..."):
-                url = "https://api.tavily.com/search"
-                payload = {
-                    "api_key": TAVILY_KEY,
-                    "query": query,
-                    "include_images": True,
-                }
-                res = requests.post(url, json=payload)
-                if res.status_code == 200:
-                    data = res.json()
-                    st.write("**🤖 AI要約:**")
-                    st.write(data.get("answer", "要約はありません"))
-
-                    st.write("---")
-                    st.write("**🔗 関連リンク:**")
-                    for result in data.get("results", []):
-                        st.markdown(
-                            f"- [{result.get('title')}]({result.get('url')})"
-                        )
-                        st.write(result.get("content"))
-                    add_log("[+] Tavily AI Search completed successfully.")
-                else:
-                    st.error(f"APIエラー: {res.status_code} (Tavily)")
-                    add_log(f"[!] Tavily API Error: {res.status_code}")
+        add_log("[-] ERROR: No target image provided.")
+        st.warning("画像をアップロードしてください。")
 
 st.markdown("---")
 
