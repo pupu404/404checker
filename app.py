@@ -1,11 +1,16 @@
 import os
+import requests
 import sqlite3
 import streamlit as st
 
 # ==========================================
-# 🔑 設定
+# 🔑 設定・APIキー
 # ==========================================
 ADMIN_PASSWORD = "404@saya"
+GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
+GOOGLE_CX = "526b7c083394b482d"
+TAVILY_KEY = "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"
+IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"  # 画像の一時ホスティング用キー
 # ==========================================
 
 st.set_page_config(
@@ -156,6 +161,24 @@ def delete_key(key):
     conn.close()
 
 
+# 画像を一時ホスティングしてURLを取得する関数
+def upload_to_image_hosting(image_file):
+    if not IMGBB_API_KEY:
+        return None
+    try:
+        image_file.seek(0)
+        files = {"image": image_file.read()}
+        response = requests.post(
+            f"https://api.imgbb.com/1/upload?key={IMGBB_API_KEY}", files=files
+        )
+        data = response.json()
+        if data.get("success"):
+            return data["data"]["url"]
+    except Exception:
+        pass
+    return None
+
+
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.current_key = None
@@ -245,9 +268,10 @@ if not st.session_state.authenticated:
 # 3. メインコンソール
 # ==========================================
 st.markdown(
-    '<div class="cyber-title">404 CHECKER // IMAGE REVERSE TERMINAL</div>',
+    '<div class="cyber-title">404 CHECKER // ULTIMATE TERMINAL</div>',
     unsafe_allow_html=True,
 )
+st.sidebar.manual = f"ACTIVE KEY: `{st.session_state.current_key}`"
 st.sidebar.markdown(f"ACTIVE KEY: `{st.session_state.current_key}`")
 if st.sidebar.button("SESSION TERMINATE"):
     st.session_state.authenticated = False
@@ -255,48 +279,146 @@ if st.sidebar.button("SESSION TERMINATE"):
     st.rerun()
 
 if "logs" not in st.session_state:
-    st.session_state.logs = "[404 SYSTEM] Initialized. Awaiting target image upload..."
+    st.session_state.logs = "[404 SYSTEM] Initialized. Ready for target scan..."
 
 
 def add_log(msg):
     st.session_state.logs += f"\n{msg}"
 
 
-st.markdown("### [ TARGET IMAGE UPLOAD ]")
-uploaded_file = st.file_uploader(
-    "画像アップロード",
-    type=["png", "jpg", "jpeg", "webp"],
-    label_visibility="collapsed",
-)
+tab_choice1, tab_choice2 = st.tabs(["🖼️ 拾い画チェック (画像検索)", "🔍 キーワード検索 (Google & Tavily)"])
 
-if uploaded_file is not None:
-    add_log(f"[+] Target loaded: {uploaded_file.name}")
-    st.image(uploaded_file, caption="TARGET PREVIEW", use_container_width=True)
+with tab_choice1:
+    st.markdown("### [ TARGET IMAGE UPLOAD & MATCH TRACE ]")
+    uploaded_file = st.file_uploader(
+        "画像アップロード",
+        type=["png", "jpg", "jpeg", "webp"],
+        label_visibility="collapsed",
+    )
 
-if st.button("EXECUTE 404 SCAN"):
     if uploaded_file is not None:
-        add_log("[*] Analyzing visual hashes & generating endpoints...")
+        st.image(uploaded_file, caption="TARGET PREVIEW", use_column_width=True)
 
-        google_lens_url = "https://lens.google.com/"
-        tineye_url = "https://tineye.com/"
-        pinterest_url = "https://www.pinterest.com/"
+    # 検索キーワード（画像の逆引き補助やファイル名検索用）
+    img_query = st.text_input("検索クエリ・キーワード（任意）", "イラスト 拾い画 検証")
 
-        add_log("[+] 404 Scan complete. Source match endpoints generated.")
+    if st.button("EXECUTE IMAGE 404 SCAN"):
+        if uploaded_file is not None:
+            add_log(f"[+] Target loaded: {uploaded_file.name}")
+            add_log("[*] Uploading image & executing visual match search...")
 
-        st.markdown(
-            f"""
-            <div class="results-terminal">
-            <h4>⚡ 404 CHECKER // REVERSE SEARCH ENDPOINTS</h4>
-            <p><b>[Google Lens Source]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">{google_lens_url}</a></p>
-            <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">{tineye_url}</a></p>
-            <p><b>[Pinterest Vector Search]:</b><br><a href="{pinterest_url}" target="_blank" class="cyber-link">{pinterest_url}</a></p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        add_log("[-] ERROR: No target image provided.")
-        st.warning("画像をアップロードしてください。")
+            hosted_url = upload_to_image_hosting(uploaded_file)
+            if hosted_url:
+                add_log(f"[+] Buffer created: {hosted_url}")
+
+            # Google Custom Search APIによる類似画像・関連リンクの直接取得
+            with st.spinner("類似画像と元リンクを検索中..."):
+                url = "https://www.googleapis.com/customsearch/v1"
+                params = {
+                    "key": GOOGLE_API_KEY,
+                    "cx": GOOGLE_CX,
+                    "q": img_query,
+                    "searchType": "image",
+                    "lr": "lang_ja",
+                }
+                res = requests.get(url, params=params)
+                
+                if res.status_code == 200:
+                    data = res.json()
+                    items = data.get("items", [])
+                    
+                    if items:
+                        add_log(f"[+] Found {len(items)} matching results.")
+                        st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
+                        st.markdown("<h4>⚡ MATCHED SOURCES & SIMILAR IMAGES</h4>", unsafe_allow_html=True)
+                        
+                        for item in items:
+                            title = item.get("title")
+                            image_url = item.get("link")
+                            context_link = item.get("image", {}).get("contextLink", image_url)
+                            
+                            st.markdown(f"- **[{title}]({context_link})**")
+                            st.image(image_url, width=150)
+                            st.markdown(f"`Source URL: {context_link}`")
+                            st.markdown("---")
+                            
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    else:
+                        st.info("一致する類似画像・リンクが見つかりませんでした。")
+                        add_log("[-] No matching items found via API.")
+                else:
+                    st.error(f"APIエラー: {res.status_code}")
+                    add_log(f"[!] API Error: {res.status_code}")
+        else:
+            add_log("[-] ERROR: No target image provided.")
+            st.warning("画像をアップロードしてください。")
+
+with tab_choice2:
+    st.markdown("### [ SEARCH QUERY INPUT ]")
+    query = st.text_input("検索キーワードを入力", "拾い画 チェック")
+
+    if st.button("EXECUTE API 404 SCAN"):
+        if not query:
+            st.warning("検索ワードを入力してください。")
+        else:
+            add_log(f"[*] Executing API search for: '{query}'")
+            sub_tab1, sub_tab2 = st.tabs(["🖼️ Google Custom Search", "🤖 Tavily AI Web Search"])
+
+            with sub_tab1:
+                st.subheader("Google Custom Search (画像検索)")
+                with st.spinner("Google検索中..."):
+                    url = "https://www.googleapis.com/customsearch/v1"
+                    params = {
+                        "key": GOOGLE_API_KEY,
+                        "cx": GOOGLE_CX,
+                        "q": query,
+                        "searchType": "image",
+                        "lr": "lang_ja",
+                    }
+                    res = requests.get(url, params=params)
+                    if res.status_code == 200:
+                        data = res.json()
+                        items = data.get("items", [])
+                        if items:
+                            cols = st.columns(3)
+                            for i, item in enumerate(items):
+                                with cols[i % 3]:
+                                    st.image(
+                                        item.get("link"),
+                                        caption=item.get("title"),
+                                        use_column_width=True,
+                                    )
+                            add_log("[+] Google Image Search completed.")
+                        else:
+                            st.info("画像が見つかりませんでした。")
+                    else:
+                        st.error(f"APIエラー: {res.status_code} (Google)")
+
+            with sub_tab2:
+                st.subheader("Tavily AI (ウェブ要約)")
+                with st.spinner("Tavily AI検索中..."):
+                    url = "https://api.tavily.com/search"
+                    payload = {
+                        "api_key": TAVILY_KEY,
+                        "query": query,
+                        "include_images": True,
+                    }
+                    res = requests.post(url, json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        st.write("**🤖 AI要約:**")
+                        data.get("answer", "要約はありません") # type: ignore
+
+                        st.write("---")
+                        st.write("**🔗 関連リンク:**")
+                        for result in data.get("results", []):
+                            st.markdown(
+                                f"- [{result.get('title')}]({result.get('url')})"
+                            )
+                            result.get("content") # type: ignore
+                        add_log("[+] Tavily AI Search completed.")
+                    else:
+                        st.error(f"APIエラー: {res.status_code} (Tavily)")
 
 st.markdown("---")
 
