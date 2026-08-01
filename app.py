@@ -1,17 +1,20 @@
 import os
 import sqlite3
 import streamlit as st
-import streamlit.components.v1 as components
+import requests
 
 # ==========================================
 # 🔑 設定・APIキー
 # ==========================================
 ADMIN_PASSWORD = "404@saya"
+GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
 GOOGLE_CX = "526b7c083394b482d"
+TAVILY_KEY = "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"
+IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"
 # ==========================================
 
 st.set_page_config(
-    page_title="404 CHECKER // SECURE TERMINAL", page_icon="⚡", layout="centered"
+    page_title="404 CHECKER // IMAGE SEARCH", page_icon="⚡", layout="centered"
 )
 
 # --- サイバー・ダークテーマのカスタムCSS ---
@@ -50,14 +53,6 @@ st.markdown(
         box-shadow: 0 0 20px rgba(14, 165, 233, 0.6);
         border-color: #7dd3fc;
     }
-    .admin-box {
-        background-color: #0f172a;
-        padding: 20px;
-        border-radius: 4px;
-        border: 1px solid #1e293b;
-        box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
-        margin-bottom: 20px;
-    }
     .results-terminal {
         background-color: #050b14;
         padding: 20px;
@@ -85,7 +80,7 @@ st.markdown(
 )
 
 
-# --- データベース・認証処理 ---
+# --- 簡易DB（認証用） ---
 def init_db():
     conn = sqlite3.connect("licenses.db")
     cursor = conn.cursor()
@@ -116,173 +111,96 @@ def verify_key(key):
     return result is not None
 
 
-def generate_new_key():
-    random_bytes = os.urandom(4)
-    new_key = f"404-{random_bytes.hex().upper()}"
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO keys (license_key) VALUES (?)", (new_key,))
-        conn.commit()
-        return new_key
-    except sqlite3.IntegrityError:
-        return None
-    finally:
-        conn.close()
-
-
-def get_all_keys():
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT license_key, created_at FROM keys")
-    results = cursor.fetchall()
-    conn.close()
-    return results
-
-
-def delete_key(key):
-    conn = sqlite3.connect("licenses.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM keys WHERE license_key = ?", (key,))
-    conn.commit()
-    conn.close()
-
-
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.current_key = None
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False
 
-
-# ==========================================
-# 1. 管理者画面
-# ==========================================
-if st.session_state.is_admin:
-    st.markdown(
-        '<div class="cyber-title">404 CHECKER // ADMIN CONSOLE</div>',
-        unsafe_allow_html=True,
-    )
-
-    if st.sidebar.button("SESSION TERMINATE"):
-        st.session_state.is_admin = False
-        st.session_state.authenticated = False
-        st.rerun()
-
-    st.markdown('<div class="admin-box">', unsafe_allow_html=True)
-    st.markdown("### [ SYSTEM LICENSE MANAGER ]")
-
-    if st.button("GENERATE NEW LICENSE KEY"):
-        created = generate_new_key()
-        if created:
-            st.success(f"KEY GENERATED: {created}")
-        else:
-            st.error("ERROR: DUPLICATE KEY")
-
-    st.markdown("---")
-    st.markdown("### [ ACTIVE KEYS ]")
-    keys = get_all_keys()
-    if keys:
-        for k, date in keys:
-            col1, col2, col3 = st.columns([3, 2, 1])
-            col1.markdown(f"`{k}`")
-            col2.text(date)
-            if col3.button("REVOKE", key=f"del_{k}"):
-                delete_key(k)
-                st.success(f"REVOKED: {k}")
-                st.rerun()
-    else:
-        st.info("NO ACTIVE KEYS FOUND")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.stop()
-
-
-# ==========================================
-# 2. 認証画面
-# ==========================================
+# --- 認証画面 ---
 if not st.session_state.authenticated:
     st.markdown(
         '<div class="cyber-title">404 CHECKER // ACCESS CONTROL</div>',
         unsafe_allow_html=True,
     )
-
-    with st.container():
-        st.markdown("### [ ENTER LICENSE KEY OR ROOT PASS ]")
-        input_key = st.text_input(
-            "ライセンスキー",
-            type="password",
-            placeholder="404-XXXX-XXXX または アドミンパスワード",
-        )
-
-        if st.button("AUTHENTICATE"):
-            entered_val = input_key.strip()
-            if entered_val == ADMIN_PASSWORD:
-                st.session_state.is_admin = True
-                st.session_state.authenticated = True
-                st.success("ROOT ACCESS GRANTED")
-                st.rerun()
-            elif verify_key(entered_val):
-                st.session_state.authenticated = True
-                st.session_state.current_key = entered_val
-                st.success("ACCESS GRANTED")
-                st.rerun()
-            else:
-                st.error("ACCESS DENIED: INVALID KEY OR PASSWORD")
-
+    input_key = st.text_input(
+        "ライセンスキー",
+        type="password",
+        placeholder="404-XXXX-XXXX または アドミンパスワード",
+    )
+    if st.button("AUTHENTICATE"):
+        entered_val = input_key.strip()
+        if entered_val == ADMIN_PASSWORD or verify_key(entered_val):
+            st.session_state.authenticated = True
+            st.session_state.current_key = entered_val
+            st.rerun()
+        else:
+            st.error("ACCESS DENIED")
     st.stop()
 
 
-# ==========================================
-# 3. メインコンソール
-# ==========================================
+# --- メイン画面：画像検索専用ツール ---
 st.markdown(
-    '<div class="cyber-title">404 CHECKER // ULTIMATE TERMINAL</div>',
+    '<div class="cyber-title">404 CHECKER // IN-APP IMAGE SEARCH</div>',
     unsafe_allow_html=True,
 )
 st.sidebar.markdown(f"ACTIVE KEY: `{st.session_state.current_key}`")
-if st.sidebar.button("SESSION TERMINATE"):
+if st.sidebar.button("LOGOUT"):
     st.session_state.authenticated = False
-    st.session_state.current_key = None
     st.rerun()
 
-if "logs" not in st.session_state:
-    st.session_state.logs = "[404 SYSTEM] Initialized. Ready for target scan..."
-
-
-def add_log(msg):
-    st.session_state.logs += f"\n{msg}"
-
-
-# メイン画面：画像アップロード ＆ Googleカスタム検索ウィジェットの内部完結統合
-st.markdown("### [ TARGET IMAGE SCANNER ]")
+st.markdown("### [ 1. ターゲット画像のアップロード ]")
 uploaded_file = st.file_uploader(
-    "画像アップロード",
+    "画像をアップロード",
     type=["png", "jpg", "jpeg", "webp"],
     label_visibility="collapsed",
 )
 
 if uploaded_file is not None:
-    st.image(uploaded_file, caption="TARGET PREVIEW", width=300)
-    add_log(f"[+] Target loaded: {uploaded_file.name}")
+    st.image(uploaded_file, caption="UPLOADED TARGET", width=300)
 
-st.markdown("---")
-st.markdown("### [ GOOGLE CUSTOM SEARCH ENGINE ]")
-st.write("ご指定のカスタム検索エンジン（ID: `526b7c083394b482d`）をこのサイト内で直接実行できます。")
+    if st.button("この画像に似た写真をサイト内で検索する"):
+        query_term = os.path.splitext(uploaded_file.name)[0]
 
-# Googleの公式検索ウィジェットをアプリ内に直接埋め込む
-cse_html = f"""
-<script async src="https://cse.google.com/cse.js?cx={GOOGLE_CX}"></script>
-<div class="gcse-search"></div>
-"""
-components.html(cse_html, height=400, scrolling=True)
+        with st.spinner("データベースおよびGoogleインデックスから類似写真をスキャン中..."):
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                "key": GOOGLE_API_KEY,
+                "cx": GOOGLE_CX,
+                "q": query_term,
+                "searchType": "image",
+                "lr": "lang_ja",
+            }
 
-st.markdown("---")
+            try:
+                res = requests.get(url, params=params, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    items = data.get("items", [])
 
-st.markdown("### [ EXECUTION LOG ]")
-st.text_area(
-    "ログ",
-    value=st.session_state.logs,
-    height=150,
-    label_visibility="collapsed",
-)
+                    st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
+                    st.markdown("<h4>⚡ 類似写真・一致リンク結果</h4>", unsafe_allow_html=True)
+
+                    if items:
+                        cols = st.columns(3)
+                        for i, item in enumerate(items[:6]):
+                            with cols[i % 3]:
+                                img_link = item.get("link")
+                                page_link = item.get("image", {}).get("contextLink", "#")
+                                title = item.get("title", "類似画像")
+
+                                st.image(img_link, use_column_width=True)
+                                st.markdown(
+                                    f"**[{title[:20]}...]**({page_link})",
+                                    unsafe_allow_html=True,
+                                )
+                    else:
+                        st.info("一致する類似写真のデータが見つかりませんでした。")
+
+                    st.markdown("</div>", unsafe_allow_html=True)
+                else:
+                    st.error(
+                        f"APIエラー ({res.status_code}): APIキーやCXの設定を確認してください。"
+                    )
+            except Exception as e:
+                st.error(f"通信エラーが発生しました: {e}")
+else:
+    st.info("検索したい画像をアップロードしてください。")
