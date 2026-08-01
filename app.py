@@ -2,6 +2,7 @@ import os
 import requests
 import sqlite3
 import streamlit as st
+from tavily import TavilyClient
 
 # ==========================================
 # 🔑 設定・APIキー
@@ -10,7 +11,7 @@ ADMIN_PASSWORD = "404@saya"
 GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
 GOOGLE_CX = "526b7c083394b482d"
 TAVILY_KEY = "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"
-IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"  # 画像の一時ホスティング用キー
+IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"  # 画像一時ホスティング用キー
 # ==========================================
 
 st.set_page_config(
@@ -271,7 +272,6 @@ st.markdown(
     '<div class="cyber-title">404 CHECKER // ULTIMATE TERMINAL</div>',
     unsafe_allow_html=True,
 )
-st.sidebar.manual = f"ACTIVE KEY: `{st.session_state.current_key}`"
 st.sidebar.markdown(f"ACTIVE KEY: `{st.session_state.current_key}`")
 if st.sidebar.button("SESSION TERMINATE"):
     st.session_state.authenticated = False
@@ -289,7 +289,7 @@ def add_log(msg):
 tab_choice1, tab_choice2 = st.tabs(["🖼️ 拾い画チェック (画像検索)", "🔍 キーワード検索 (Google & Tavily)"])
 
 with tab_choice1:
-    st.markdown("### [ TARGET IMAGE UPLOAD & MATCH TRACE ]")
+    st.markdown("### [ TARGET IMAGE UPLOAD ]")
     uploaded_file = st.file_uploader(
         "画像アップロード",
         type=["png", "jpg", "jpeg", "webp"],
@@ -299,56 +299,33 @@ with tab_choice1:
     if uploaded_file is not None:
         st.image(uploaded_file, caption="TARGET PREVIEW", use_column_width=True)
 
-    # 検索キーワード（画像の逆引き補助やファイル名検索用）
-    img_query = st.text_input("検索クエリ・キーワード（任意）", "イラスト 拾い画 検証")
-
     if st.button("EXECUTE IMAGE 404 SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Uploading image & executing visual match search...")
+            add_log("[*] Uploading image & generating direct search endpoints...")
 
             hosted_url = upload_to_image_hosting(uploaded_file)
             if hosted_url:
                 add_log(f"[+] Buffer created: {hosted_url}")
+                google_lens_url = f"https://lens.google.com/uploadbyurl?url={hosted_url}"
+                tineye_url = f"https://tineye.com/search?url={hosted_url}"
+            else:
+                add_log("[!] Warning: Image host failed. Using fallback links.")
+                google_lens_url = "https://lens.google.com/"
+                tineye_url = "https://tineye.com/"
 
-            # Google Custom Search APIによる類似画像・関連リンクの直接取得
-            with st.spinner("類似画像と元リンクを検索中..."):
-                url = "https://www.googleapis.com/customsearch/v1"
-                params = {
-                    "key": GOOGLE_API_KEY,
-                    "cx": GOOGLE_CX,
-                    "q": img_query,
-                    "searchType": "image",
-                    "lr": "lang_ja",
-                }
-                res = requests.get(url, params=params)
-                
-                if res.status_code == 200:
-                    data = res.json()
-                    items = data.get("items", [])
-                    
-                    if items:
-                        add_log(f"[+] Found {len(items)} matching results.")
-                        st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
-                        st.markdown("<h4>⚡ MATCHED SOURCES & SIMILAR IMAGES</h4>", unsafe_allow_html=True)
-                        
-                        for item in items:
-                            title = item.get("title")
-                            image_url = item.get("link")
-                            context_link = item.get("image", {}).get("contextLink", image_url)
-                            
-                            st.markdown(f"- **[{title}]({context_link})**")
-                            st.image(image_url, width=150)
-                            st.markdown(f"`Source URL: {context_link}`")
-                            st.markdown("---")
-                            
-                        st.markdown('</div>', unsafe_allow_html=True)
-                    else:
-                        st.info("一致する類似画像・リンクが見つかりませんでした。")
-                        add_log("[-] No matching items found via API.")
-                else:
-                    st.error(f"APIエラー: {res.status_code}")
-                    add_log(f"[!] API Error: {res.status_code}")
+            add_log("[+] Scan complete. Direct endpoints ready.")
+
+            st.markdown(
+                f"""
+                <div class="results-terminal">
+                <h4>⚡ 404 CHECKER // DIRECT IMAGE SEARCH ENDPOINTS</h4>
+                <p><b>[Google Lens Direct Search]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">👉 検索結果ページを開く (Google Lens)</a></p>
+                <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">👉 一致結果ページを開く (TinEye)</a></p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
         else:
             add_log("[-] ERROR: No target image provided.")
             st.warning("画像をアップロードしてください。")
@@ -397,28 +374,32 @@ with tab_choice2:
             with sub_tab2:
                 st.subheader("Tavily AI (ウェブ要約)")
                 with st.spinner("Tavily AI検索中..."):
-                    url = "https://api.tavily.com/search"
-                    payload = {
-                        "api_key": TAVILY_KEY,
-                        "query": query,
-                        "include_images": True,
-                    }
-                    res = requests.post(url, json=payload)
-                    if res.status_code == 200:
-                        data = res.json()
+                    try:
+                        client = TavilyClient(api_key=TAVILY_KEY)
+                        response = client.search(
+                            query=query,
+                            search_depth="advanced",
+                            include_images=True
+                        )
+                        
                         st.write("**🤖 AI要約:**")
-                        data.get("answer", "要約はありません") # type: ignore
+                        answer = response.get("answer")
+                        if answer:
+                            st.info(answer)
+                        else:
+                            st.write("要約はありません")
 
                         st.write("---")
                         st.write("**🔗 関連リンク:**")
-                        for result in data.get("results", []):
+                        for result in response.get("results", []):
                             st.markdown(
                                 f"- [{result.get('title')}]({result.get('url')})"
                             )
-                            result.get("content") # type: ignore
+                            st.write(result.get("content"))
                         add_log("[+] Tavily AI Search completed.")
-                    else:
-                        st.error(f"APIエラー: {res.status_code} (Tavily)")
+                    except Exception as e:
+                        st.error(f"Tavily APIエラー: {e}")
+                        add_log(f"[!] Tavily API Error: {e}")
 
 st.markdown("---")
 
