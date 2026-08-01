@@ -1,13 +1,12 @@
 import os
 import sqlite3
 import streamlit as st
-import requests
+import streamlit.components.v1 as components
 
 # ==========================================
 # 🔑 設定・APIキー
 # ==========================================
 ADMIN_PASSWORD = "404@saya"
-GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
 GOOGLE_CX = "526b7c083394b482d"
 # ==========================================
 
@@ -255,7 +254,7 @@ def add_log(msg):
     st.session_state.logs += f"\n{msg}"
 
 
-# 余分なキーワード入力タブなどを撤廃し、画像アップロードと類似写真リンク表示に特化
+# メイン画面：画像アップロード ＆ Googleカスタム検索ウィジェットの内部完結統合
 st.markdown("### [ TARGET IMAGE SCANNER ]")
 uploaded_file = st.file_uploader(
     "画像アップロード",
@@ -265,53 +264,18 @@ uploaded_file = st.file_uploader(
 
 if uploaded_file is not None:
     st.image(uploaded_file, caption="TARGET PREVIEW", width=300)
+    add_log(f"[+] Target loaded: {uploaded_file.name}")
 
-if st.button("EXECUTE SIMILAR IMAGE SCAN"):
-    if uploaded_file is not None:
-        add_log(f"[+] Target loaded: {uploaded_file.name}")
-        
-        # ファイル名から自動で検索クエリを生成して内部完結させる
-        query_term = os.path.splitext(uploaded_file.name)[0]
-        add_log(f"[*] Extracting visual signatures for: '{query_term}'")
+st.markdown("---")
+st.markdown("### [ GOOGLE CUSTOM SEARCH ENGINE ]")
+st.write("ご指定のカスタム検索エンジン（ID: `526b7c083394b482d`）をこのサイト内で直接実行できます。")
 
-        with st.spinner("類似写真をスキャン中..."):
-            st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
-            st.markdown("<h4>⚡ 類似写真リンク一覧</h4>", unsafe_allow_html=True)
-
-            try:
-                url = "https://www.googleapis.com/customsearch/v1"
-                params = {
-                    "key": GOOGLE_API_KEY,
-                    "cx": GOOGLE_CX,
-                    "q": query_term,
-                    "searchType": "image",
-                    "lr": "lang_ja",
-                }
-                res = requests.get(url, params=params, timeout=10)
-                if res.status_code == 200:
-                    data = res.json()
-                    items = data.get("items", [])
-                    if items:
-                        for item in items:
-                            image_url = item.get("link")
-                            page_url = item.get("image", {}).get("contextLink", "#")
-                            title = item.get("title", "類似画像")
-                            
-                            # 要件通り「これに似た写真のリンクのみ」をクリーンに表示
-                            st.markdown(f"- [{title}]({image_url}) ( [ページ元]({page_url}) )")
-                        
-                        add_log("[+] Similar image links rendered successfully.")
-                    else:
-                        st.info("類似する写真のリンクが見つかりませんでした。")
-                else:
-                    st.error(f"APIエラー: {res.status_code}")
-            except Exception as e:
-                st.error(f"ネットワークエラー: {e}")
-
-            st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        add_log("[-] ERROR: No target image provided.")
-        st.warning("画像をアップロードしてください。")
+# Googleの公式検索ウィジェットをアプリ内に直接埋め込む
+cse_html = f"""
+<script async src="https://cse.google.com/cse.js?cx={GOOGLE_CX}"></script>
+<div class="gcse-search"></div>
+"""
+components.html(cse_html, height=400, scrolling=True)
 
 st.markdown("---")
 
