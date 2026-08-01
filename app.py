@@ -302,30 +302,30 @@ with tab_choice1:
     if st.button("EXECUTE IMAGE 404 SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Uploading image & generating direct search endpoints...")
+            add_log("[*] Uploading image to host...")
 
             hosted_url = upload_to_image_hosting(uploaded_file)
+
             if hosted_url:
                 add_log(f"[+] Buffer created: {hosted_url}")
                 google_lens_url = f"https://lens.google.com/uploadbyurl?url={hosted_url}"
                 tineye_url = f"https://tineye.com/search?url={hosted_url}"
+
+                add_log("[+] Scan complete. Direct endpoints ready.")
+
+                st.markdown(
+                    f"""
+                    <div class="results-terminal">
+                    <h4>⚡ 404 CHECKER // DIRECT IMAGE SEARCH ENDPOINTS</h4>
+                    <p><b>[Google Lens Direct Search]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">👉 検索結果ページを開く (Google Lens)</a></p>
+                    <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">👉 一致結果ページを開く (TinEye)</a></p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
             else:
-                add_log("[!] Warning: Image host failed. Using fallback links.")
-                google_lens_url = "https://lens.google.com/"
-                tineye_url = "https://tineye.com/"
-
-            add_log("[+] Scan complete. Direct endpoints ready.")
-
-            st.markdown(
-                f"""
-                <div class="results-terminal">
-                <h4>⚡ 404 CHECKER // DIRECT IMAGE SEARCH ENDPOINTS</h4>
-                <p><b>[Google Lens Direct Search]:</b><br><a href="{google_lens_url}" target="_blank" class="cyber-link">👉 検索結果ページを開く (Google Lens)</a></p>
-                <p><b>[TinEye Match Trace]:</b><br><a href="{tineye_url}" target="_blank" class="cyber-link">👉 一致結果ページを開く (TinEye)</a></p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+                add_log("[-] ERROR: Image hosting failed.")
+                st.error("画像のアップロード（ImgBBへのホスティング）に失敗しました。APIキーを確認してください。")
         else:
             add_log("[-] ERROR: No target image provided.")
             st.warning("画像をアップロードしてください。")
