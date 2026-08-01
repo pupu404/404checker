@@ -1,4 +1,3 @@
-import base64
 import os
 import requests
 import sqlite3
@@ -12,7 +11,6 @@ ADMIN_PASSWORD = "404@saya"
 GOOGLE_API_KEY = "AQ.Ab8RN6JQzuK7xzgWOEKEfYQX_wrGbJc1rZsczZtXh6M-5mgf1w"
 GOOGLE_CX = "526b7c083394b482d"
 TAVILY_KEY = "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"
-IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"  # 画像一時ホスティング用キー
 # ==========================================
 
 st.set_page_config(
@@ -163,26 +161,17 @@ def delete_key(key):
     conn.close()
 
 
-# 安定性の高いBase64方式でImgBBに画像をホスティングする関数
+# Catbox (APIキー不要の無料画像ストレージ) を使った高安定ホスティング関数
 def upload_to_image_hosting(image_file):
-    if not IMGBB_API_KEY:
-        return None
     try:
         image_file.seek(0)
-        image_bytes = image_file.read()
-        encoded_image = base64.b64encode(image_bytes).decode("utf-8")
-
-        payload = {"key": IMGBB_API_KEY, "image": encoded_image}
-        response = requests.post("https://api.imgbb.com/1/upload", data=payload)
-        data = response.json()
-
-        if data.get("success"):
-            return data["data"]["url"]
-        else:
-            # エラー内容をコンソールやログ用に確認できるようにする
-            print(f"ImgBB Error Details: {data}")
+        files = {"fileToUpload": (image_file.name, image_file.read(), image_file.type)}
+        data = {"reqtype": "fileupload"}
+        response = requests.post("https://catbox.moe/user/api.php", data=data, files=files)
+        if response.status_code == 200 and response.text.startswith("http"):
+            return response.text.strip()
     except Exception as e:
-        print(f"Exception during upload: {e}")
+        print(f"Upload Exception: {e}")
     return None
 
 
@@ -308,7 +297,7 @@ with tab_choice1:
     if st.button("EXECUTE IMAGE 404 SCAN"):
         if uploaded_file is not None:
             add_log(f"[+] Target loaded: {uploaded_file.name}")
-            add_log("[*] Uploading image via Base64 payload...")
+            add_log("[*] Uploading image to secure buffer...")
 
             hosted_url = upload_to_image_hosting(uploaded_file)
 
@@ -331,7 +320,7 @@ with tab_choice1:
                 )
             else:
                 add_log("[-] ERROR: Image hosting failed.")
-                st.error("画像のアップロード（ImgBBへのホスティング）に失敗しました。APIキーを確認してください。")
+                st.error("画像のアップロードに失敗しました。ファイル形式を変えるか、時間をおいて再度お試しください。")
         else:
             add_log("[-] ERROR: No target image provided.")
             st.warning("画像をアップロードしてください。")
