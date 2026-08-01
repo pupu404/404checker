@@ -4,13 +4,11 @@ import streamlit as st
 import requests
 
 # ==========================================
-# 🔑 設定・APIキー (完成版)
+# 🔑 設定・APIキー
 # ==========================================
 ADMIN_PASSWORD = "404@saya"
 GOOGLE_API_KEY = "AIzaSyBLwxZBesL4VhBMac6toIPDCZxqN1vbDPY"
-GOOGLE_CX = "526b7c083394b482d"
-TAVILY_KEY = "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"
-IMGBB_API_KEY = "07119f4007850a4ec9908cfdcd65b533"
+GOOGLE_CX = "526b7c083394b482d"  # 必要に応じてご自身のCXに書き換えてください
 # ==========================================
 
 st.set_page_config(
@@ -70,11 +68,6 @@ st.markdown("""
         border-bottom: 1px dashed #1e293b;
         padding-bottom: 8px;
     }
-    .stFileUploader>div>div {
-        background-color: #0b0f19 !important;
-        color: #38bdf8 !important;
-        border: 1px solid #1e293b !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -133,23 +126,25 @@ uploaded_file = st.file_uploader("画像をアップロード", type=["png", "jp
 if uploaded_file is not None:
     st.image(uploaded_file, caption="UPLOADED TARGET", width=300)
     
-    if st.button("この画像に似た写真をサイト内で検索する"):
-        query_term = os.path.splitext(uploaded_file.name)[0]
-        
-        with st.spinner("データベースおよびGoogleインデックスから類似写真をスキャン中..."):
+    # 検索キーワードを入力できるようにして、403エラーの切り分けをしやすくする
+    search_keyword = st.text_input("検索ワード（ファイル名から自動入力されます）", value=os.path.splitext(uploaded_file.name)[0])
+    
+    if st.button("Googleで類似画像を検索する"):
+        with st.spinner("Googleインデックスから類似写真をスキャン中..."):
             url = "https://www.googleapis.com/customsearch/v1"
             params = {
                 "key": GOOGLE_API_KEY,
                 "cx": GOOGLE_CX,
-                "q": query_term,
-                "searchType": "image",
-                "lr": "lang_ja"
+                "q": search_keyword,
+                "searchType": "image"
             }
             
             try:
                 res = requests.get(url, params=params, timeout=10)
+                data = res.json()
+                
+                # エラーハンドリングの強化（Googleからのエラー詳細を表示）
                 if res.status_code == 200:
-                    data = res.json()
                     items = data.get("items", [])
                     
                     st.markdown('<div class="results-terminal">', unsafe_allow_html=True)
@@ -166,11 +161,13 @@ if uploaded_file is not None:
                                 st.image(img_link, use_column_width=True)
                                 st.markdown(f"**[{title[:20]}...]**({page_link})", unsafe_allow_html=True)
                     else:
-                        st.info("一致する類似写真のデータが見つかりませんでした。")
+                        st.info("一致する類似写真のデータが見つかりませんでした。別のキーワードでもお試しください。")
                         
                     st.markdown('</div>', unsafe_allow_html=True)
                 else:
-                    st.error(f"APIエラー ({res.status_code}): APIキーやCXの設定を確認してください。")
+                    # Google APIから返ってきた具体的なエラー理由を表示
+                    err_message = data.get("error", {}).get("message", "不明なエラー")
+                    st.error(f"APIエラー ({res.status_code}): {err_message}")
             except Exception as e:
                 st.error(f"通信エラーが発生しました: {e}")
 else:
